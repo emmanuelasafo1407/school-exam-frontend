@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'student_verify_details_screen.dart';
+import 'session_summary_screen.dart';
 
 class ScannerViewScreen extends StatefulWidget {
   final String courseCode;
@@ -33,21 +34,37 @@ class _ScannerViewScreenState extends State<ScannerViewScreen> {
         builder: (context) => StudentVerifyDetailsScreen(
           studentId: studentId,
           courseCode: widget.courseCode,
+          courseName: widget.courseName,
+          hall: widget.hall,
         ),
       ),
     );
+
+    if (!mounted) return;
 
     // Process the result returned from the verification screen sheet option actions
     if (actionResult == "SCAN_ANOTHER") {
       setState(() => _isProcessingScan = false);
       _cameraController.start();
     } else if (actionResult == "DONE") {
-      if (!mounted) return;
-      // 👈 FIXED: Passes structural exit instruction up to the configuration screen pipeline
-      Navigator.pop(context, "EXIT_SESSION");
-      // Exit scanner screen completely and return back to home panel
+      // 👈 FIXED: Instead of popping out blindly, push replacement to the Session Summary metrics screen
+      final exitStatus = await Navigator.pushReplacement<String, dynamic>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => SessionSummaryScreen(
+            courseCode: widget.courseCode,
+            courseName: widget.courseName,
+            hall: widget.hall,
+          ),
+        ),
+      );
+
+      // If the summary screen passes back the terminal exit flag, pass it up to close the configuration stack
+      if (exitStatus == "EXIT_SESSION" && mounted) {
+        Navigator.pop(context, "EXIT_SESSION");
+      }
     } else {
-      // Handles native system back button pressed event
+      // Handles native system back button pressed event during the verification phase
       setState(() => _isProcessingScan = false);
       _cameraController.start();
     }

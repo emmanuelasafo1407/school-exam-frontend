@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/services/api_client.dart';
 
 class StudentVerifyDetailsScreen extends StatefulWidget {
   final String studentId;
   final String courseCode;
+  final String courseName; // 👈 Added parameter requirement
+  final String hall; // 👈 Added parameter requirement
 
   const StudentVerifyDetailsScreen({
     super.key,
     required this.studentId,
     required this.courseCode,
+    required this.courseName,
+    required this.hall,
   });
 
   @override
@@ -23,7 +28,6 @@ class _StudentVerifyDetailsScreenState
   bool _isSaving = false;
   String? _errorMessage;
 
-  // Real data state values map
   late Map<String, dynamic> _studentData;
 
   @override
@@ -41,7 +45,6 @@ class _StudentVerifyDetailsScreenState
       final responseBody = result["body"];
       setState(() {
         _studentData = responseBody["data"];
-        // Rewrite localhost path prefix to point directly at your PC IP address
         if (_studentData["passport_picture"] != null) {
           _studentData["passport_picture"] = _studentData["passport_picture"]
               .toString()
@@ -57,13 +60,39 @@ class _StudentVerifyDetailsScreenState
     }
   }
 
-  void _confirmAttendance() {
+  // 👈 NEW: Connected Network Call Logic directly into your Confirm Method
+  Future<void> _confirmAttendance() async {
     setState(() => _isSaving = true);
 
-    // Attendance transaction database log placeholder logic goes here
+    final prefs = await SharedPreferences.getInstance();
+    // In a future step, we'll store the invigilator ID on login. Falling back to ID 1 for now.
+    int invigilatorId = prefs.getInt('user_id') ?? 1;
 
+    Map<String, dynamic> logData = {
+      "student_id_number": widget.studentId,
+      "course_code": widget.courseCode,
+      "course_name": widget.courseName,
+      "hall": widget.hall,
+      "invigilator_id": invigilatorId,
+    };
+
+    final result = await _apiClient.logAttendance(logData);
+
+    if (!mounted) return;
     setState(() => _isSaving = false);
 
+    if (result["statusCode"] == 201) {
+      _showSuccessSheet();
+    } else {
+      String serverError =
+          result["body"]["message"] ?? "Failed to log attendance.";
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(serverError), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  void _showSuccessSheet() {
     showModalBottomSheet(
       context: context,
       isDismissible: false,
@@ -94,10 +123,7 @@ class _StudentVerifyDetailsScreenState
             ElevatedButton.icon(
               onPressed: () {
                 Navigator.pop(context); // Close sheet
-                Navigator.pop(
-                  context,
-                  "SCAN_ANOTHER",
-                ); // Ask camera view to re-arm sensor loop
+                Navigator.pop(context, "SCAN_ANOTHER");
               },
               icon: const Icon(Icons.qr_code_scanner),
               label: const Text(
@@ -110,13 +136,9 @@ class _StudentVerifyDetailsScreenState
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
-              // 👈 FIXED: Direct instruction command to drop out back to the main dashboard panel
               onPressed: () {
                 Navigator.pop(context); // Close sheet
-                Navigator.pop(
-                  context,
-                  "DONE",
-                ); // Send final close code payload up to scanner view
+                Navigator.pop(context, "DONE");
               },
               icon: const Icon(Icons.done_all),
               label: const Text(
@@ -177,7 +199,7 @@ class _StudentVerifyDetailsScreenState
                         borderRadius: BorderRadius.circular(8),
                         child: _studentData["passport_picture"] != null
                             ? Image.network(
-                                _studentData["passport_picture"], // 👈 DYNAMIC: Live network photo file
+                                _studentData["passport_picture"],
                                 fit: BoxFit.cover,
                                 errorBuilder: (context, error, stackTrace) =>
                                     const Icon(

@@ -40,9 +40,15 @@ class _LoginScreenState extends State<LoginScreen> {
       final token = body["token"];
       final userRole = body["user"]["role"];
       final fullName = body["user"]["full_name"];
+      final int userId =
+          body["user"]["id"]; // 👈 Extract primary database auto-increment ID integer
 
       // Save session data locally on the Infinix phone
       final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(
+        'user_id',
+        userId,
+      ); // 👈 Cache ID to track who marks the attendance logs
       await prefs.setString('auth_token', token);
       await prefs.setString('user_role', userRole);
       await prefs.setString('user_name', fullName);

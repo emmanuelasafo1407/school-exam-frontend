@@ -98,4 +98,68 @@ class ApiClient {
       };
     }
   }
+
+  Future<Map<String, dynamic>> logAttendance(Map<String, dynamic> data) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/attendance/log"),
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: jsonEncode(data),
+      );
+      return {
+        "statusCode": response.statusCode,
+        "body": jsonDecode(response.body),
+      };
+    } catch (e) {
+      return {
+        "statusCode": 500,
+        "body": {"status": "error", "message": e.toString()},
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchSessionAnalytics(String courseCode) async {
+    try {
+      final response = await http.get(
+        Uri.parse("$baseUrl/attendance/analytics/$courseCode"),
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+      );
+      return {
+        "statusCode": response.statusCode,
+        "body": jsonDecode(response.body),
+      };
+    } catch (e) {
+      return {
+        "statusCode": 500,
+        "body": {"status": "error", "message": e.toString()},
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchDetailedLedger(String courseCode) async {
+    try {
+      final response = await http.get(
+        Uri.parse("$baseUrl/attendance/ledger/$courseCode"),
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+      );
+      return {
+        "statusCode": response.statusCode,
+        "body": jsonDecode(response.body),
+      };
+    } catch (e) {
+      return {
+        "statusCode": 500,
+        "body": {"status": "error", "message": e.toString()},
+      };
+    }
+  }
 }

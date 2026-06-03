@@ -25,6 +25,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _levelController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
+  String?
+  _selectedSession; // 👈 Track selected session values (Morning, Evening, Weekend)
   File? _imageFile;
   String? _base64Image;
   bool _isLoading = false;
@@ -61,6 +63,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       "department": _departmentController.text.trim(),
       "program": _programController.text.trim(),
       "level": _levelController.text.trim(),
+      "session": _selectedSession, // 👈 Appended dropdown data variable cleanly
       "password": _passwordController.text,
       "passport_picture": _base64Image,
     };
@@ -82,6 +85,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       setState(() {
         _imageFile = null;
         _base64Image = null;
+        _selectedSession = null; // Reset tracker parameters cleanly
       });
       _formKey.currentState!.reset();
     } else {
@@ -201,6 +205,34 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       validator: (v) => v!.isEmpty ? 'Required' : null,
                     ),
                     const SizedBox(height: 12),
+
+                    // 👈 NEW DROPDOWN: Structured list layout options to isolate shifts selection criteria context
+                    DropdownButtonFormField<String>(
+                      value: _selectedSession,
+                      decoration: const InputDecoration(
+                        labelText: 'Academic Session Shift',
+                        prefixIcon: Icon(Icons.access_time),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: ['Morning', 'Evening', 'Weekend']
+                          .map(
+                            (session) => DropdownMenuItem(
+                              value: session,
+                              child: Text(session),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedSession = value;
+                        });
+                      },
+                      validator: (value) => value == null
+                          ? 'Please select your session shift'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+
                     TextFormField(
                       controller: _passwordController,
                       decoration: const InputDecoration(
