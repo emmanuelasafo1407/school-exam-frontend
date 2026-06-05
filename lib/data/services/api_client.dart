@@ -99,16 +99,32 @@ class ApiClient {
     }
   }
 
-  Future<Map<String, dynamic>> logAttendance(Map<String, dynamic> data) async {
+  Future<Map<String, dynamic>> logStudentAttendance({
+    required String studentId,
+    required String courseCode,
+    required String courseName,
+    required String hall,
+    required String startTime, // 👈 Forwarding time constraints string
+    required String endTime, // 👈 Forwarding time constraints string
+    required int invigilatorId,
+    required String paperCode, // 👈 Forwarding captured student booklet code
+  }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUrl/attendance/log"),
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-        },
-        body: jsonEncode(data),
+        Uri.parse("$baseUrl/log-attendance"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "student_id_number": studentId,
+          "course_code": courseCode,
+          "course_name": courseName,
+          "hall": hall,
+          "start_time": startTime,
+          "end_time": endTime,
+          "invigilator_id": invigilatorId,
+          "paper_code": paperCode,
+        }),
       );
+
       return {
         "statusCode": response.statusCode,
         "body": jsonDecode(response.body),
@@ -116,7 +132,7 @@ class ApiClient {
     } catch (e) {
       return {
         "statusCode": 500,
-        "body": {"status": "error", "message": e.toString()},
+        "body": {"message": "Network tracking failure trace: $e"},
       };
     }
   }
