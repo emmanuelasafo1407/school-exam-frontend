@@ -72,15 +72,29 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       // Route cleanly to the correct functional dashboards
+      // Route cleanly to the correct functional dashboards by passing runtime state criteria downstream
       if (userRole == 'student') {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const StudentDashboard()),
+          MaterialPageRoute(
+            builder: (context) => StudentDashboard(
+              userData:
+                  body["user"], // 👈 Passes the core user data map payload down
+              token:
+                  token, // 👈 Passes the secure Sanctum session token string down
+            ),
+          ),
         );
       } else if (userRole == 'invigilator') {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const InvigilatorDashboard()),
+          MaterialPageRoute(
+            builder: (context) => InvigilatorDashboard(
+              userData:
+                  body["user"], // 👈 Passes details down to supervisor views symmetrically
+              token: token,
+            ),
+          ),
         );
       }
     } else {

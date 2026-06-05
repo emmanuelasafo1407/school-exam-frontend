@@ -162,4 +162,27 @@ class ApiClient {
       };
     }
   }
+
+  Future<Map<String, dynamic>> logoutUser(String token) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/logout"),
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization":
+              "Bearer $token", // Passes secure bearer verification header string
+        },
+      );
+
+      return {
+        "statusCode": response.statusCode,
+        "body": jsonDecode(response.body),
+      };
+    } catch (e) {
+      return {
+        "statusCode": 500,
+        "body": {"message": "Network connection dropped context: $e"},
+      };
+    }
+  }
 }

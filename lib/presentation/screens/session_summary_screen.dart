@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/services/api_client.dart';
 import '../../data/services/pdf_generator_service.dart';
 
@@ -69,7 +70,6 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
     if (result["statusCode"] == 200) {
       final responseBody = result["body"];
 
-      // 👈 FIXED: Provided both required parameters 'invigilatorName' and 'signaturePicture' explicitly
       await PdfGeneratorService.generateAndPrintLedger(
         courseCode: widget.courseCode,
         courseName: widget.courseName,
@@ -98,8 +98,26 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
         foregroundColor: Colors.white,
         leading: IconButton(
           icon: const Icon(Icons.home),
-          onPressed: () => Navigator.pop(context, "EXIT_SESSION"),
+          onPressed: () {
+            Navigator.popUntil(context, (route) => route.isFirst);
+          },
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: "Logout System",
+            onPressed: () async {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.clear();
+              if (!mounted) return;
+              Navigator.pushNamedAndRemoveUntil(
+                context,
+                '/login',
+                (route) => false,
+              );
+            },
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())

@@ -17,7 +17,11 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
+      // 1. Sets the default entry screen widget tree structure
       home: const LoginScreen(),
+
+      // 2. 👈 FIXED: Added the named routes table so your logouts can safely clear the stack
+      routes: {'/login': (context) => const LoginScreen()},
     );
   }
 }
