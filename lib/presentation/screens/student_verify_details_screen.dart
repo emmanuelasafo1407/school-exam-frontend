@@ -7,6 +7,7 @@ import 'session_summary_screen.dart';
 class StudentVerifyDetailsScreen extends StatefulWidget {
   final String courseCode;
   final String courseName;
+  final String lecturerName;
   final String hall;
   final String startTime;
   final String endTime;
@@ -15,6 +16,7 @@ class StudentVerifyDetailsScreen extends StatefulWidget {
     super.key,
     required this.courseCode,
     required this.courseName,
+    required this.lecturerName,
     required this.hall,
     required this.startTime,
     required this.endTime,
@@ -28,58 +30,99 @@ class StudentVerifyDetailsScreen extends StatefulWidget {
 class _StudentVerifyDetailsScreenState
     extends State<StudentVerifyDetailsScreen> {
   final ApiClient _apiClient = ApiClient();
-  final MobileScannerController _scannerController = MobileScannerController();
+  late MobileScannerController _scannerController;
   final TextEditingController _paperCodeController = TextEditingController();
 
-  bool _isProcessingScan = false;
-  Map<String, dynamic>? _scannedStudentData;
+  bool _isLoadingProfile = false;
+  bool _isSubmitting = false;
   String? _activeStudentId;
+  Map<String, dynamic>? _studentProfileData;
+  String? _errorMessage;
+  bool _canScan =
+      true; // 👈 NEW: Protects hardware stream from duplicate frame noise
+
+  @override
+  void initState() {
+    super.initState();
+    // Configure controller explicitly with high-compatibility parameters
+    _scannerController = MobileScannerController(
+      detectionSpeed: DetectionSpeed.noDuplicates,
+      autoStart: true,
+    );
+  }
 
   void _onDetectBarcode(BarcodeCapture capture) async {
-    if (_isProcessingScan || _scannedStudentData != null) return;
+    // 👈 FIXED: Instantly drop frames if the loop isn't explicitly ready to scan another student
+    if (!_canScan ||
+        _isLoadingProfile ||
+        _isSubmitting ||
+        _activeStudentId != null)
+      return;
 
+    if (capture.barcodes.isEmpty) return;
     final barcode = capture.barcodes.first;
-    final String? scannedId = barcode.rawValue;
+    final String? scannedId = barcode.rawValue?.trim();
 
-    if (scannedId == null || scannedId.isEmpty) return;
+    if (scannedId == null || scannedId.length < 5) return;
 
     setState(() {
-      _isProcessingScan = true;
+      _canScan = false; // Turn off detection instantly
       _activeStudentId = scannedId;
+      _isLoadingProfile = true;
+      _errorMessage = null;
     });
 
-    _scannerController.stop();
+    final response = await _apiClient.fetchVerifiedStudentProfile(scannedId);
 
-    final response = await _apiClient.fetchStudentProfile(scannedId);
+    if (!mounted) return;
 
     if (response["statusCode"] == 200) {
       setState(() {
-        _scannedStudentData = response["body"]["data"];
-        _isProcessingScan = false;
+        _studentProfileData = response["body"]["data"];
+        _isLoadingProfile = false;
       });
     } else {
-      setState(() => _isProcessingScan = false);
-      _showScanErrorSnackbar(
-        response["body"]["message"] ?? "Student profile not found.",
+      setState(() {
+        _isLoadingProfile = false;
+        _activeStudentId = null;
+        _canScan = true; // Release lock on failure
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            response["body"]["message"] ??
+                "Student record missing from database.",
+          ),
+          backgroundColor: Colors.red,
+        ),
       );
-      _resumeScannerStream();
     }
   }
 
   Future<void> _submitAttendanceRecord() async {
     if (_paperCodeController.text.trim().isEmpty) {
-      _showScanErrorSnackbar("Enter the student's exam booklet paper code!");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Enter the student's exam booklet paper code!"),
+          backgroundColor: Colors.red,
+        ),
+      );
       return;
     }
+
+    setState(() {
+      _isSubmitting = true;
+      _errorMessage = null;
+    });
 
     final prefs = await SharedPreferences.getInstance();
     final int invigilatorId = prefs.getInt('user_id') ?? 1;
 
-    // 👈 FIXED: Named properties explicitly mapped to clear compile errors on Line 79
     final result = await _apiClient.logStudentAttendance(
       studentId: _activeStudentId!,
       courseCode: widget.courseCode,
       courseName: widget.courseName,
+      lecturerName: widget.lecturerName,
       hall: widget.hall,
       startTime: widget.startTime,
       endTime: widget.endTime,
@@ -88,12 +131,43 @@ class _StudentVerifyDetailsScreenState
     );
 
     if (!mounted) return;
+    setState(() => _isSubmitting = false);
 
     if (result["statusCode"] == 201) {
+      // Success! Clear variables and show prompt
       _showLoopPromptDialog();
     } else {
-      _showScanErrorSnackbar(
-        result["body"]["message"] ?? "Failed to save attendance.",
+      // 👈 FIXED: If the database rejects it (e.g., duplicate), show a clean alert dialog
+      // but give a button to reset the scanner back to active mode instantly!
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.warning, color: Colors.orange),
+              SizedBox(width: 8),
+              Text("Attendance Rejected"),
+            ],
+          ),
+          content: Text(
+            result["body"]["message"] ??
+                "This student has already logged attendance for this exam session window.",
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _resumeScannerStream(); // 👈 Resets variables and turns camera back ON
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+              child: const Text(
+                "Next Scan",
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
       );
     }
   }
@@ -107,11 +181,11 @@ class _StudentVerifyDetailsScreenState
           children: [
             Icon(Icons.check_circle, color: Colors.green),
             SizedBox(width: 8),
-            Text("Attendance Logged"),
+            Text("Verification Complete"),
           ],
         ),
         content: Text(
-          "Attendance recorded successfully for ${_scannedStudentData?['name'] ?? 'Student'}.\nSelect next step:",
+          "Attendance recorded successfully for ${_studentProfileData?['name'] ?? _activeStudentId}.\nChoose next step:",
         ),
         actions: [
           TextButton(
@@ -129,7 +203,7 @@ class _StudentVerifyDetailsScreenState
               Navigator.pop(context);
               _navigateToSummaryReport();
             },
-            child: const Text("Done / View Summary"),
+            child: const Text("Done / Close"),
           ),
         ],
       ),
@@ -138,11 +212,13 @@ class _StudentVerifyDetailsScreenState
 
   void _resumeScannerStream() {
     setState(() {
-      _scannedStudentData = null;
       _activeStudentId = null;
+      _studentProfileData = null;
+      _errorMessage = null;
       _paperCodeController.clear();
+      _canScan =
+          true; // 👈 FIXED: Tell scanner it is safe to scan a new card instantly
     });
-    _scannerController.start();
   }
 
   void _navigateToSummaryReport() {
@@ -159,12 +235,6 @@ class _StudentVerifyDetailsScreenState
     );
   }
 
-  void _showScanErrorSnackbar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
-    );
-  }
-
   @override
   void dispose() {
     _scannerController.dispose();
@@ -174,6 +244,11 @@ class _StudentVerifyDetailsScreenState
 
   @override
   Widget build(BuildContext context) {
+    String? rawPicPath = _studentProfileData?['passport_picture'];
+    String passportUrl = rawPicPath != null
+        ? rawPicPath.replaceAll("localhost", "172.20.10.3")
+        : "";
+
     return Scaffold(
       appBar: AppBar(
         title: const Text("Scan Entry Pass Cards"),
@@ -183,60 +258,142 @@ class _StudentVerifyDetailsScreenState
       body: Column(
         children: [
           Expanded(
-            flex: 4,
-            child: _scannedStudentData == null
+            flex: 3,
+            child: _activeStudentId == null
                 ? MobileScanner(
                     controller: _scannerController,
                     onDetect: _onDetectBarcode,
                   )
-                : const Center(
-                    child: Icon(Icons.fact_check, size: 80, color: Colors.blue),
+                : Container(
+                    color: Colors.black,
+                    child: const Center(
+                      child: Icon(
+                        Icons.qr_code_scanner,
+                        size: 64,
+                        color: Colors.blue,
+                      ),
+                    ),
                   ),
           ),
           Expanded(
-            flex: 5,
+            flex: 7,
             child: Container(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                border: Border(top: BorderSide(color: Colors.grey.shade300)),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(top: BorderSide(color: Colors.grey)),
               ),
-              child: _isProcessingScan
+              child: _isLoadingProfile
                   ? const Center(child: CircularProgressIndicator())
-                  : _scannedStudentData == null
+                  : _activeStudentId == null
                   ? const Center(
                       child: Text(
-                        "Align a student's QR code pass to verify details.",
+                        "Align a student's QR pass card inside the viewfinder to verify entry credentials.",
+                        textAlign: TextAlign.center,
                       ),
                     )
                   : SingleChildScrollView(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          Center(
+                            child: Container(
+                              width: 130,
+                              height: 130,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.blue.shade700,
+                                  width: 2.5,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.grey.withOpacity(0.3),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(9),
+                                child: passportUrl.isNotEmpty
+                                    ? Image.network(
+                                        passportUrl,
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                const Icon(
+                                                  Icons.person,
+                                                  size: 60,
+                                                  color: Colors.grey,
+                                                ),
+                                      )
+                                    : const Icon(
+                                        Icons.person,
+                                        size: 60,
+                                        color: Colors.grey,
+                                      ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
                           Text(
-                            _scannedStudentData!['name']
+                            (_studentProfileData?['name'] ?? 'N/A')
                                 .toString()
                                 .toUpperCase(),
+                            textAlign: TextAlign.center,
                             style: const TextStyle(
-                              fontSize: 18,
+                              fontSize: 20,
                               fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
                             ),
                           ),
-                          Text(
-                            "Student ID: $_activeStudentId",
-                            style: const TextStyle(
-                              color: Colors.blue,
-                              fontWeight: FontWeight.bold,
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey.shade200),
+                            ),
+                            child: Column(
+                              children: [
+                                _buildProfileDetailRow(
+                                  "Student ID",
+                                  _activeStudentId ?? 'N/A',
+                                  Colors.blue.shade900,
+                                  isBold: true,
+                                ),
+                                const Divider(),
+                                _buildProfileDetailRow(
+                                  "Program",
+                                  (_studentProfileData?['program'] ?? 'N/A')
+                                      .toString()
+                                      .toUpperCase(),
+                                  Colors.black87,
+                                ),
+                                const Divider(),
+                                _buildProfileDetailRow(
+                                  "Level",
+                                  "Level ${_studentProfileData?['level'] ?? 'N/A'}",
+                                  Colors.black87,
+                                ),
+                                const Divider(),
+                                _buildProfileDetailRow(
+                                  "Session Shift",
+                                  (_studentProfileData?['session'] ?? 'Morning')
+                                      .toString()
+                                      .toUpperCase(),
+                                  Colors.purple.shade700,
+                                  isBold: true,
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            "Program: ${_scannedStudentData!['program']} | Level: ${_scannedStudentData!['level']}",
-                            style: const TextStyle(color: Colors.grey),
-                          ),
-                          const Divider(height: 24),
+                          const SizedBox(height: 20),
                           const Text(
-                            "ASSIGN EXAM PAPER CODE",
+                            "ASSIGN EXAM PAPER BOOKLET CODE",
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
@@ -247,24 +404,94 @@ class _StudentVerifyDetailsScreenState
                           TextFormField(
                             controller: _paperCodeController,
                             decoration: const InputDecoration(
-                              labelText: "Booklet / Paper Code",
+                              labelText: "Exams Paper / Booklet Code",
                               prefixIcon: Icon(Icons.edit_note),
                               border: OutlineInputBorder(),
                             ),
+                            keyboardType: TextInputType.number,
                           ),
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 16),
+                          if (_errorMessage != null)
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              margin: const EdgeInsets.only(bottom: 12),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade50,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                _errorMessage!,
+                                style: const TextStyle(
+                                  color: Colors.red,
+                                  fontSize: 13,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
                           ElevatedButton(
-                            onPressed: _submitAttendanceRecord,
+                            onPressed: _isSubmitting
+                                ? null
+                                : _submitAttendanceRecord,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green,
+                              backgroundColor: Colors.green.shade600,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
-                            child: const Text("Verify Attendance"),
+                            child: _isSubmitting
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text(
+                                    "Check Attendance",
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                           ),
                         ],
                       ),
                     ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileDetailRow(
+    String label,
+    String value,
+    Color valueColor, {
+    bool isBold = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: valueColor,
+              fontSize: 14,
+              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
             ),
           ),
         ],

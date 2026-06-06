@@ -103,20 +103,26 @@ class ApiClient {
     required String studentId,
     required String courseCode,
     required String courseName,
+    required String lecturerName,
     required String hall,
-    required String startTime, // 👈 Forwarding time constraints string
-    required String endTime, // 👈 Forwarding time constraints string
+    required String startTime,
+    required String endTime,
     required int invigilatorId,
-    required String paperCode, // 👈 Forwarding captured student booklet code
+    required String paperCode,
   }) async {
     try {
       final response = await http.post(
         Uri.parse("$baseUrl/log-attendance"),
-        headers: {"Content-Type": "application/json"},
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json", // 👈 ENFORCES JSON output on failure
+        },
         body: jsonEncode({
-          "student_id_number": studentId,
+          "student_id_number":
+              studentId, // 👈 FIXED: Matches Laravel validation rule key
           "course_code": courseCode,
           "course_name": courseName,
+          "lecturer_name": lecturerName,
           "hall": hall,
           "start_time": startTime,
           "end_time": endTime,
@@ -198,6 +204,69 @@ class ApiClient {
       return {
         "statusCode": 500,
         "body": {"message": "Network connection dropped context: $e"},
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchVerifiedStudentProfile(
+    String studentId,
+  ) async {
+    try {
+      final response = await http.get(
+        Uri.parse("$baseUrl/student-profile/$studentId"),
+        headers: {
+          "Content-Type": "application/json",
+          "Accept":
+              "application/json", // 👈 Tells Laravel to ALWAYS return JSON instead of HTML web pages
+        },
+      );
+
+      // Gracefully handle server crashes or bad route targets without crashing the JSON parser
+      if (response.statusCode != 200) {
+        return {
+          "statusCode": response.statusCode,
+          "body": {
+            "message": "Server returned error code: ${response.statusCode}",
+          },
+        };
+      }
+
+      return {
+        "statusCode": response.statusCode,
+        "body": jsonDecode(response.body),
+      };
+    } catch (e) {
+      return {
+        "statusCode": 500,
+        "body": {"message": "Exception occurred during fetch operation: $e"},
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> submitExamPaper({
+    required String studentId,
+    required String courseCode,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/submit-paper"),
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: jsonEncode({
+          "student_id_number": studentId,
+          "course_code": courseCode,
+        }),
+      );
+      return {
+        "statusCode": response.statusCode,
+        "body": jsonDecode(response.body),
+      };
+    } catch (e) {
+      return {
+        "statusCode": 500,
+        "body": {"message": "Failed to log script submission: $e"},
       };
     }
   }

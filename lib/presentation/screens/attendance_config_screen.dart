@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'student_verify_details_screen.dart'; // 👈 FIXED: Routes exclusively here
+import 'student_verify_details_screen.dart';
 
 class AttendanceConfigScreen extends StatefulWidget {
   const AttendanceConfigScreen({super.key});
@@ -15,9 +15,20 @@ class _AttendanceConfigScreenState extends State<AttendanceConfigScreen> {
   final TextEditingController _codeController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _hallController = TextEditingController();
+  final TextEditingController _lecturerController =
+      TextEditingController(); // 👈 ADDED: Lecturer Controller
 
   DateTime? _startTime;
   DateTime? _endTime;
+
+  @override
+  void dispose() {
+    _codeController.dispose();
+    _nameController.dispose();
+    _hallController.dispose();
+    _lecturerController.dispose(); // 👈 Clean up memory allocations
+    super.dispose();
+  }
 
   Future<void> _pickDateTime(bool isStart) async {
     final DateTime? pickedDate = await showDatePicker(
@@ -70,9 +81,10 @@ class _AttendanceConfigScreenState extends State<AttendanceConfigScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => StudentVerifyDetailsScreen(
-          // 👈 FIXED: Points to the correct constructor
           courseCode: _codeController.text.trim().toUpperCase(),
           courseName: _nameController.text.trim(),
+          lecturerName: _lecturerController.text
+              .trim(), // 👈 ADDED: Passes parameter value
           hall: _hallController.text.trim().toUpperCase(),
           startTime: _startTime!.toIso8601String(),
           endTime: _endTime!.toIso8601String(),
@@ -115,6 +127,19 @@ class _AttendanceConfigScreenState extends State<AttendanceConfigScreen> {
                 validator: (v) => v!.isEmpty ? "Enter course title name" : null,
               ),
               const SizedBox(height: 16),
+
+              // 👈 NEW LECTURER TEXT FIELD
+              TextFormField(
+                controller: _lecturerController,
+                decoration: const InputDecoration(
+                  labelText: "Lecturer's Name (e.g., Dr. Appiah)",
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) =>
+                    v!.isEmpty ? "Enter assigning lecturer name" : null,
+              ),
+              const SizedBox(height: 16),
+
               TextFormField(
                 controller: _hallController,
                 decoration: const InputDecoration(

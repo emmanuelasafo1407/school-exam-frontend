@@ -15,7 +15,6 @@ class PdfGeneratorService {
   }) async {
     final pdf = pw.Document();
 
-    // 👈 FIXED LINE: Changed type from MemoryImage? to pw.ImageProvider? to match networkImage return type
     pw.ImageProvider? signatureImageWidget;
 
     if (signaturePicture != null) {
@@ -30,8 +29,6 @@ class PdfGeneratorService {
       }
     }
 
-    // ... rest of your pdf multi-page layout building blocks remain exactly the same ...
-
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
@@ -44,7 +41,6 @@ class PdfGeneratorService {
               textAlign: pw.TextAlign.center,
             ),
           ),
-          // 👈 FIXED HEADER: Changed from Engineering Student Association (ESA) to FACULTY OF ENGINEERING
           pw.Center(
             child: pw.Text(
               "FACULTY OF ENGINEERING",
@@ -100,27 +96,34 @@ class PdfGeneratorService {
           ),
           pw.SizedBox(height: 12),
 
-          // 👈 FIXED TABLE COLUMNS: Cleaned columns structure to include Session column mapping metrics
+          // 👈 FIXED ARRAY MATRIX: Houses both explicit tracking time markers
           pw.TableHelper.fromTextArray(
             headers: [
               "#",
               "STUDENT ID",
               "STUDENT NAME",
               "SESSION",
-              "TIME LOGGED",
-              "STATUS",
+              "PAPER CODE",
+              "TIME LOGGED", // 👈 Restored
+              "SUBMITTED",
+              "TIME SUBMITTED", // 👈 Kept
             ],
             data: List<List<String>>.generate(records.length, (index) {
               final item = records[index];
+              final bool isTurnedIn =
+                  item["paper_submitted"] == true ||
+                  item["paper_submitted"] == 1;
               return [
                 (index + 1).toString(),
                 item["index_number"].toString(),
                 item["student_name"].toString(),
-                item["session"]
-                    .toString()
-                    .toUpperCase(), // 👈 Displays MORNING, EVENING, or WEEKEND
-                item["time_logged"].toString(),
-                item["status"].toString(),
+                item["session"].toString().toUpperCase(),
+                item["paper_code"]?.toString() ?? "N/A",
+                item["time_logged"]?.toString() ??
+                    "N/A", // 👈 Renders attendance timestamp
+                isTurnedIn ? "YES" : "NO",
+                item["time_submitted"]?.toString() ??
+                    "PENDING", // 👈 Renders script submission timestamp
               ];
             }),
             headerStyle: pw.TextStyle(
@@ -137,6 +140,8 @@ class PdfGeneratorService {
               3: pw.Alignment.center,
               4: pw.Alignment.center,
               5: pw.Alignment.center,
+              6: pw.Alignment.center,
+              7: pw.Alignment.center,
             },
             rowDecoration: const pw.BoxDecoration(
               border: pw.Border(
