@@ -68,7 +68,11 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         );
+      } else if (role == 'admin') {
+        // Redirect to the Admin Dashboard
+        Navigator.pushReplacementNamed(context, '/admin-dashboard');
       } else {
+        // Redirect to Invigilator
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(

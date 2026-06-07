@@ -1,9 +1,24 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart'; // This will work after running 'flutter pub add dio'
 
 class ApiClient {
-  // ⚠️ REPLACE THIS IP WITH YOUR CURRENT PC IP FROM IPCONFIG
   final String baseUrl = "http://172.20.10.3:8000/api";
+
+  // Initialize Dio here
+  final Dio _dio = Dio(BaseOptions(baseUrl: 'http://172.20.10.3:8000/api'));
+
+  // ONLY ONE VERSION OF getAdminStats
+  Future<Map<String, dynamic>> getAdminStats() async {
+    try {
+      final response = await _dio.get('/admin/stats');
+      return Map<String, dynamic>.from(response.data);
+    } catch (e) {
+      throw Exception("Failed to fetch admin stats: $e");
+    }
+  }
+
+  // ... keep your other methods below (registerStudent, loginUser, etc.
 
   Future<Map<String, dynamic>> registerStudent(
     Map<String, dynamic> data,
