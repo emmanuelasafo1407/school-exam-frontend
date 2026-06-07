@@ -4,6 +4,61 @@ import 'package:printing/printing.dart';
 import 'package:flutter/material.dart' show debugPrint;
 
 class PdfGeneratorService {
+  // 1. NEW: Method for Student QR Passes
+  static Future<void> generateStudentPass({
+    required String studentName,
+    required String studentId,
+    required String qrPayload,
+  }) async {
+    final pdf = pw.Document();
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        build: (pw.Context context) {
+          return pw.Center(
+            child: pw.Column(
+              mainAxisAlignment: pw.MainAxisAlignment.center,
+              children: [
+                pw.Text(
+                  "OFFICIAL HALL ADMISSION TOKEN",
+                  style: pw.TextStyle(
+                    fontSize: 22,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.SizedBox(height: 40),
+                pw.BarcodeWidget(
+                  barcode: pw.Barcode.qrCode(),
+                  data: qrPayload,
+                  width: 250,
+                  height: 250,
+                ),
+                pw.SizedBox(height: 30),
+                pw.Text(
+                  "STUDENT: ${studentName.toUpperCase()}",
+                  style: pw.TextStyle(
+                    fontSize: 18,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.Text(
+                  "ID NUMBER: $studentId",
+                  style: const pw.TextStyle(fontSize: 16),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+
+    await Printing.layoutPdf(
+      onLayout: (PdfPageFormat format) async => pdf.save(),
+    );
+  }
+
+  // 2. EXISTING: Method for Invigilator Ledgers
   static Future<void> generateAndPrintLedger({
     required String courseCode,
     required String courseName,
@@ -16,8 +71,7 @@ class PdfGeneratorService {
     final pdf = pw.Document();
 
     pw.ImageProvider? signatureImageWidget;
-
-    if (signaturePicture != null) {
+    if (signaturePicture != null && signaturePicture.isNotEmpty) {
       try {
         final cleanUrl = signaturePicture.replaceAll(
           "localhost",
@@ -25,7 +79,7 @@ class PdfGeneratorService {
         );
         signatureImageWidget = await networkImage(cleanUrl);
       } catch (e) {
-        debugPrint("Signature failed to load: $e");
+        debugPrint("Signature image failed to load: $e");
       }
     }
 
@@ -33,30 +87,37 @@ class PdfGeneratorService {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
-        build: (context) => [
-          pw.Center(
-            child: pw.Text(
-              "GHANA COMMUNICATION TECHNOLOGY UNIVERSITY",
-              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
-              textAlign: pw.TextAlign.center,
+        header: (pw.Context context) => pw.Column(
+          children: [
+            pw.Center(
+              child: pw.Text(
+                "GHANA COMMUNICATION TECHNOLOGY UNIVERSITY",
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
             ),
-          ),
-          pw.Center(
-            child: pw.Text(
-              "FACULTY OF ENGINEERING",
-              style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
-              textAlign: pw.TextAlign.center,
+            pw.Center(
+              child: pw.Text(
+                "FACULTY OF ENGINEERING",
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
             ),
-          ),
-          pw.Center(
-            child: pw.Text(
-              "Official Examination Attendance Ledger",
-              style: const pw.TextStyle(fontSize: 10),
-              textAlign: pw.TextAlign.center,
+            pw.Center(
+              child: pw.Text(
+                "Official Examination Attendance Ledger",
+                style: const pw.TextStyle(fontSize: 10),
+              ),
             ),
-          ),
-          pw.SizedBox(height: 16),
-
+            pw.Divider(),
+            pw.SizedBox(height: 10),
+          ],
+        ),
+        build: (pw.Context context) => [
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
@@ -95,8 +156,6 @@ class PdfGeneratorService {
             ],
           ),
           pw.SizedBox(height: 12),
-
-          // 👈 FIXED ARRAY MATRIX: Houses both explicit tracking time markers
           pw.TableHelper.fromTextArray(
             headers: [
               "#",
@@ -104,26 +163,25 @@ class PdfGeneratorService {
               "STUDENT NAME",
               "SESSION",
               "PAPER CODE",
-              "TIME LOGGED", // 👈 Restored
+              "TIME LOGGED",
               "SUBMITTED",
-              "TIME SUBMITTED", // 👈 Kept
+              "TIME SUBMITTED",
             ],
             data: List<List<String>>.generate(records.length, (index) {
               final item = records[index];
               final bool isTurnedIn =
                   item["paper_submitted"] == true ||
-                  item["paper_submitted"] == 1;
+                  item["paper_submitted"] == 1 ||
+                  item["paper_submitted"] == "1";
               return [
                 (index + 1).toString(),
                 item["index_number"].toString(),
                 item["student_name"].toString(),
                 item["session"].toString().toUpperCase(),
                 item["paper_code"]?.toString() ?? "N/A",
-                item["time_logged"]?.toString() ??
-                    "N/A", // 👈 Renders attendance timestamp
+                item["time_logged"]?.toString() ?? "N/A",
                 isTurnedIn ? "YES" : "NO",
-                item["time_submitted"]?.toString() ??
-                    "PENDING", // 👈 Renders script submission timestamp
+                item["time_submitted"]?.toString() ?? "PENDING",
               ];
             }),
             headerStyle: pw.TextStyle(
@@ -133,7 +191,6 @@ class PdfGeneratorService {
             ),
             headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
             cellStyle: const pw.TextStyle(fontSize: 8),
-            cellAlignment: pw.Alignment.centerLeft,
             cellAlignments: {
               0: pw.Alignment.center,
               1: pw.Alignment.center,
@@ -143,83 +200,21 @@ class PdfGeneratorService {
               6: pw.Alignment.center,
               7: pw.Alignment.center,
             },
-            rowDecoration: const pw.BoxDecoration(
-              border: pw.Border(
-                bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.5),
-              ),
-            ),
           ),
-          pw.SizedBox(height: 30),
-
+          pw.SizedBox(height: 40),
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: pw.CrossAxisAlignment.end,
             children: [
-              pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.center,
-                children: [
-                  if (signatureImageWidget != null)
-                    pw.Container(
-                      width: 100,
-                      height: 40,
-                      margin: const pw.EdgeInsets.only(bottom: 4),
-                      child: pw.Image(
-                        signatureImageWidget,
-                        fit: pw.BoxFit.contain,
-                      ),
-                    )
-                  else
-                    pw.SizedBox(height: 44),
-                  pw.Container(
-                    width: 160,
-                    decoration: const pw.BoxDecoration(
-                      border: pw.Border(
-                        bottom: pw.BorderSide(
-                          color: PdfColors.black,
-                          width: 0.75,
-                        ),
-                      ),
-                    ),
-                  ),
-                  pw.SizedBox(height: 4),
-                  pw.Text(
-                    "INVIGILATOR: $invigilatorName",
-                    style: pw.TextStyle(
-                      fontSize: 8,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                ],
+              _buildSignatureBlock(
+                invigilatorName,
+                signatureImageWidget,
+                "INVIGILATOR",
               ),
-              pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.center,
-                children: [
-                  pw.SizedBox(height: 44),
-                  pw.Container(
-                    width: 160,
-                    decoration: const pw.BoxDecoration(
-                      border: pw.Border(
-                        bottom: pw.BorderSide(
-                          color: PdfColors.black,
-                          width: 0.75,
-                        ),
-                      ),
-                    ),
-                  ),
-                  pw.SizedBox(height: 4),
-                  pw.Text(
-                    "CO-INVIGILATOR SIGNATURE",
-                    style: pw.TextStyle(
-                      fontSize: 8,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
+              _buildSignatureBlock("CO-INVIGILATOR", null, "SIGNATURE"),
             ],
           ),
         ],
-        footer: (context) => pw.Container(
+        footer: (pw.Context context) => pw.Container(
           alignment: pw.Alignment.centerRight,
           margin: const pw.EdgeInsets.only(top: 16),
           child: pw.Text(
@@ -232,6 +227,37 @@ class PdfGeneratorService {
 
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat format) async => pdf.save(),
+    );
+  }
+
+  static pw.Widget _buildSignatureBlock(
+    String label,
+    pw.ImageProvider? image,
+    String role,
+  ) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.center,
+      children: [
+        if (image != null)
+          pw.Container(
+            width: 80,
+            height: 30,
+            child: pw.Image(image, fit: pw.BoxFit.contain),
+          )
+        else
+          pw.SizedBox(height: 30),
+        pw.Container(
+          width: 140,
+          decoration: const pw.BoxDecoration(
+            border: pw.Border(bottom: pw.BorderSide(width: 0.5)),
+          ),
+        ),
+        pw.SizedBox(height: 4),
+        pw.Text(
+          "$role: $label",
+          style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
+        ),
+      ],
     );
   }
 }

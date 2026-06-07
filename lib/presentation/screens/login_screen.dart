@@ -15,7 +15,6 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final ApiClient _apiClient = ApiClient();
-
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoading = false;
@@ -23,87 +22,65 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() => _isLoading = true);
 
     final result = await _apiClient.loginUser(
       _emailController.text.trim(),
       _passwordController.text,
     );
-
     if (!mounted) return;
-
     setState(() => _isLoading = false);
 
     if (result["statusCode"] == 200) {
       final body = result["body"];
-      final token = body["token"];
-      final userRole = body["user"]["role"];
-      final fullName = body["user"]["full_name"];
-      final int userId =
-          body["user"]["id"]; // 👈 Extract primary database auto-increment ID integer
+      final String token = body["token"];
+      final String role = body["user"]["role"] ?? "student";
+      final String fullName = body["user"]["full_name"] ?? "User";
 
-      // Save session data locally on the Infinix phone
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(
-        'user_id',
-        userId,
-      ); // 👈 Cache ID to track who marks the attendance logs
       await prefs.setString('auth_token', token);
-      await prefs.setString('user_role', userRole);
+      await prefs.setString('user_role', role);
       await prefs.setString('user_name', fullName);
 
-      // Capture the passport image path from the Laravel payload if a student logs in
-      if (body["user"]["student_profile"] != null) {
-        String rawUrl =
-            body["user"]["student_profile"]["passport_picture"] ?? "";
-        // Convert 'localhost' to your real computer IP address so your phone can read it over the Wi-Fi loop
-        String routingUrl = rawUrl.replaceAll("localhost", "172.20.10.3");
-        await prefs.setString('user_passport', routingUrl);
-      }
+      if (role == 'student') {
+        final Map<String, dynamic> studentProfile = {
+          "name": fullName,
+          "index_number":
+              body["user"]["student_profile"]?["student_id_number"] ?? "N/A",
+          "level": body["user"]["student_profile"]?["level"] ?? "300",
+          "program": body["user"]["student_profile"]?["program"] ?? "N/A",
+          "session": body["user"]["student_profile"]?["session"] ?? "Morning",
+          "passport_picture":
+              body["user"]["student_profile"]?["passport_picture"],
+        };
 
-      if (!mounted) return;
+        final List<Map<String, dynamic>> rawSemesterExams =
+            body["exams"] != null
+            ? List<Map<String, dynamic>>.from(body["exams"])
+            : [];
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Welcome back, $fullName!"),
-          backgroundColor: Colors.green,
-        ),
-      );
-
-      // Route cleanly to the correct functional dashboards
-      // Route cleanly to the correct functional dashboards by passing runtime state criteria downstream
-      if (userRole == 'student') {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
             builder: (context) => StudentDashboard(
-              userData:
-                  body["user"], // 👈 Passes the core user data map payload down
-              token:
-                  token, // 👈 Passes the secure Sanctum session token string down
+              studentProfile: studentProfile,
+              rawSemesterExams: rawSemesterExams,
             ),
           ),
         );
-      } else if (userRole == 'invigilator') {
+      } else {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) => InvigilatorDashboard(
-              userData:
-                  body["user"], // 👈 Passes details down to supervisor views symmetrically
-              token: token,
-            ),
+            builder: (context) =>
+                InvigilatorDashboard(userData: body["user"], token: token),
           ),
         );
       }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            result["body"]["message"] ??
-                "Login failed. Check your credentials.",
-          ),
+          content: Text(result["body"]["message"] ?? "Login failed."),
           backgroundColor: Colors.red,
         ),
       );
@@ -121,34 +98,18 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Form(
                 key: _formKey,
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const SizedBox(height: 40),
                     const Icon(Icons.lock_person, size: 80, color: Colors.blue),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Exam Attendance Manager',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 40),
-
                     TextFormField(
                       controller: _emailController,
                       decoration: const InputDecoration(
-                        labelText: 'Email Address',
+                        labelText: 'Email',
                         prefixIcon: Icon(Icons.email),
                         border: OutlineInputBorder(),
                       ),
-                      keyboardType: TextInputType.emailAddress,
-                      validator: (v) => v!.isEmpty ? 'Enter your email' : null,
                     ),
                     const SizedBox(height: 16),
-
                     TextFormField(
                       controller: _passwordController,
                       obscureText: _obscurePassword,
@@ -165,35 +126,22 @@ class _LoginScreenState extends State<LoginScreen> {
                             () => _obscurePassword = !_obscurePassword,
                           ),
                         ),
-                        border: OutlineInputBorder(),
+                        border: const OutlineInputBorder(),
                       ),
-                      validator: (v) =>
-                          v!.isEmpty ? 'Enter your password' : null,
                     ),
                     const SizedBox(height: 24),
-
                     ElevatedButton(
                       onPressed: _handleLogin,
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      child: const Text(
-                        'Login',
-                        style: TextStyle(fontSize: 18),
-                      ),
+                      child: const Text('Login'),
                     ),
-                    const SizedBox(height: 16),
-
                     TextButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const RegisterGatewayScreen(),
-                          ),
-                        );
-                      },
-                      child: const Text("Don't have an account? Register here"),
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const RegisterGatewayScreen(),
+                        ),
+                      ),
+                      child: const Text("Register here"),
                     ),
                   ],
                 ),
