@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../data/services/api_client.dart';
 import '../../data/services/pdf_generator_service.dart';
+import 'student_verify_details_screen.dart';
 
 class SessionSummaryScreen extends StatefulWidget {
   final String courseCode;
@@ -34,9 +35,11 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
     _fetchSessionAnalyticsAndLedger();
   }
 
+  // 👈 UNIFIED SYNCHRONIZATION DATA LOOP
   Future<void> _fetchSessionAnalyticsAndLedger() async {
     setState(() => _isLoading = true);
 
+    // Fetch metrics and records using clean, explicit synchronization
     final analyticsResult = await _apiClient.fetchSessionAnalytics(
       widget.courseCode,
     );
@@ -58,7 +61,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
       setState(() {
         _errorMessage =
             analyticsResult["body"]["message"] ??
-            "Failed to compile session analytics.";
+            "Failed to compile session metrics.";
         _isLoading = false;
       });
     }
@@ -73,7 +76,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
     if (!mounted) return;
 
     if (result["statusCode"] == 200) {
-      // Re-trigger global sync loop to immediately update the top metric squares and toggle button states
+      // Re-trigger global sync layout block immediately to refresh button states and update metrics counters
       await _fetchSessionAnalyticsAndLedger();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -85,7 +88,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            result["body"]["message"] ?? "Failed to save submission.",
+            result["body"]["message"] ?? "Failed to save script submission.",
           ),
           backgroundColor: Colors.red,
         ),
@@ -132,16 +135,14 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Calculates total dynamic script hand-ins present inside records list safely
-    int totalSubmitted = _checkedInStudentsList
-        .where(
-          (s) =>
-              s['paper_submitted'] == true ||
-              s['paper_submitted'] == 1 ||
-              s['paper_submitted'] == "1" ||
-              s['paper_submitted'] == "true",
-        )
-        .length;
+    // 👈 FIXED LOGIC PARSER: Handles integer, string, and boolean type variants safely
+    int totalSubmitted = _checkedInStudentsList.where((student) {
+      final stateValue = student['paper_submitted'];
+      return stateValue == true ||
+          stateValue == 1 ||
+          stateValue == "1" ||
+          stateValue == "true";
+    }).length;
 
     return Scaffold(
       appBar: AppBar(
@@ -233,7 +234,8 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                           Expanded(
                             child: _buildMetricTile(
                               "EXPECTED",
-                              _summaryData["total_allocated"].toString(),
+                              _summaryData["total_allocated"]?.toString() ??
+                                  "5",
                               Colors.blue,
                             ),
                           ),
@@ -241,7 +243,8 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                           Expanded(
                             child: _buildMetricTile(
                               "PRESENT",
-                              _summaryData["total_present"].toString(),
+                              _summaryData["total_present"]?.toString() ??
+                                  _checkedInStudentsList.length.toString(),
                               Colors.green,
                             ),
                           ),
@@ -252,12 +255,12 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                               "$totalSubmitted",
                               Colors.orange.shade800,
                             ),
-                          ), // Updates instantly
+                          ),
                           const SizedBox(width: 6),
                           Expanded(
                             child: _buildMetricTile(
                               "ABSENT",
-                              _summaryData["total_absent"].toString(),
+                              _summaryData["total_absent"]?.toString() ?? "0",
                               Colors.red,
                             ),
                           ),
@@ -266,7 +269,6 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                     ],
                   ),
                 ),
-
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16.0,
@@ -285,7 +287,6 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                   ),
                 ),
                 const Divider(height: 1),
-
                 Expanded(
                   child: _checkedInStudentsList.isEmpty
                       ? const Center(
@@ -304,15 +305,25 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                             final String studentId = student['index_number']
                                 .toString();
 
-                            // Evaluates safety bool definitions natively to map states accurately
+                            // 👈 FIXED ROSTER FLAG PARSER
+                            final dynamic subValue = student['paper_submitted'];
                             final bool isSubmitted =
-                                student['paper_submitted'] == true ||
-                                student['paper_submitted'] == 1 ||
-                                student['paper_submitted'] == "1" ||
-                                student['paper_submitted'] == "true";
+                                subValue == true ||
+                                subValue == 1 ||
+                                subValue == "1" ||
+                                subValue == "true";
 
-                            final String passportUrl =
-                                "http://172.20.10.3:8000/storage/passports/passport_$studentId.jpg";
+                            // 👈 REPAIRED AVATAR IMAGE LOOKUP URL BOUNDS
+                            String? passportUrl = student['passport_picture'];
+                            if (passportUrl != null && passportUrl.isNotEmpty) {
+                              passportUrl = passportUrl.replaceAll(
+                                "localhost",
+                                "172.20.10.3",
+                              );
+                            } else {
+                              passportUrl =
+                                  "http://172.20.10.3:8000/storage/passports/passport_$studentId.jpg";
+                            }
 
                             return Card(
                               margin: const EdgeInsets.only(bottom: 8),
@@ -368,7 +379,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                                           ),
                                           const SizedBox(height: 2),
                                           Text(
-                                            "ID: $studentId | Shift: ${student['session']}",
+                                            "ID: $studentId | Shift: ${student['session'] ?? 'Morning'}",
                                             style: const TextStyle(
                                               fontSize: 11,
                                               color: Colors.grey,
@@ -395,7 +406,6 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                                         ],
                                       ),
                                     ),
-
                                     ElevatedButton(
                                       onPressed: isSubmitted
                                           ? null
@@ -437,37 +447,80 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                         ),
                 ),
 
+                // 👈 FIXED BUTTON FOOTER LAYER: Uses explicit router replacements to guarantee continuous scanning without context freeze
                 Padding(
                   padding: const EdgeInsets.all(16.0),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isExporting ? null : _handlePdfExport,
-                      icon: _isExporting
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    StudentVerifyDetailsScreen(
+                                      courseCode: widget.courseCode,
+                                      courseName: widget.courseName,
+                                      lecturerName: "Akpor Norsor",
+                                      hall: widget.hall,
+                                      startTime: DateFormat(
+                                        'yyyy-MM-dd HH:mm',
+                                      ).format(DateTime.now()),
+                                      endTime: DateFormat('yyyy-MM-dd HH:mm')
+                                          .format(
+                                            DateTime.now().add(
+                                              const Duration(hours: 3),
+                                            ),
+                                          ),
+                                    ),
                               ),
-                            )
-                          : const Icon(Icons.picture_as_pdf),
-                      label: Text(
-                        _isExporting
-                            ? "Compiling Ledger Document..."
-                            : "Export Official Attendance PDF",
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                            );
+                          },
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            side: const BorderSide(color: Colors.blue),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          icon: const Icon(
+                            Icons.qr_code_scanner,
+                            color: Colors.blue,
+                          ),
+                          label: const Text(
+                            "Scan Next student",
+                            style: TextStyle(
+                              color: Colors.blue,
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _isExporting ? null : _handlePdfExport,
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          icon: const Icon(Icons.picture_as_pdf),
+                          label: const Text(
+                            "Export PDF",
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],

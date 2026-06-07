@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:intl/intl.dart';
 import '../../data/services/api_client.dart';
 import 'session_summary_screen.dart';
 
@@ -37,14 +38,11 @@ class _StudentVerifyDetailsScreenState
   bool _isSubmitting = false;
   String? _activeStudentId;
   Map<String, dynamic>? _studentProfileData;
-  String? _errorMessage;
-  bool _canScan =
-      true; // 👈 NEW: Protects hardware stream from duplicate frame noise
+  bool _canScan = true;
 
   @override
   void initState() {
     super.initState();
-    // Configure controller explicitly with high-compatibility parameters
     _scannerController = MobileScannerController(
       detectionSpeed: DetectionSpeed.noDuplicates,
       autoStart: true,
@@ -52,7 +50,6 @@ class _StudentVerifyDetailsScreenState
   }
 
   void _onDetectBarcode(BarcodeCapture capture) async {
-    // 👈 FIXED: Instantly drop frames if the loop isn't explicitly ready to scan another student
     if (!_canScan ||
         _isLoadingProfile ||
         _isSubmitting ||
@@ -66,10 +63,9 @@ class _StudentVerifyDetailsScreenState
     if (scannedId == null || scannedId.length < 5) return;
 
     setState(() {
-      _canScan = false; // Turn off detection instantly
+      _canScan = false;
       _activeStudentId = scannedId;
       _isLoadingProfile = true;
-      _errorMessage = null;
     });
 
     final response = await _apiClient.fetchVerifiedStudentProfile(scannedId);
@@ -85,7 +81,7 @@ class _StudentVerifyDetailsScreenState
       setState(() {
         _isLoadingProfile = false;
         _activeStudentId = null;
-        _canScan = true; // Release lock on failure
+        _canScan = true;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -110,10 +106,7 @@ class _StudentVerifyDetailsScreenState
       return;
     }
 
-    setState(() {
-      _isSubmitting = true;
-      _errorMessage = null;
-    });
+    setState(() => _isSubmitting = true);
 
     final prefs = await SharedPreferences.getInstance();
     final int invigilatorId = prefs.getInt('user_id') ?? 1;
@@ -134,11 +127,8 @@ class _StudentVerifyDetailsScreenState
     setState(() => _isSubmitting = false);
 
     if (result["statusCode"] == 201) {
-      // Success! Clear variables and show prompt
-      _showLoopPromptDialog();
+      _showSuccessPromptDialog();
     } else {
-      // 👈 FIXED: If the database rejects it (e.g., duplicate), show a clean alert dialog
-      // but give a button to reset the scanner back to active mode instantly!
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -147,18 +137,28 @@ class _StudentVerifyDetailsScreenState
             children: [
               Icon(Icons.warning, color: Colors.orange),
               SizedBox(width: 8),
-              Text("Attendance Rejected"),
+              Text("Attendance Duplicate"),
             ],
           ),
           content: Text(
             result["body"]["message"] ??
-                "This student has already logged attendance for this exam session window.",
+                "This student has already checked into this exam session room.",
           ),
           actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context); // Dismiss dialog
+                _exitToSummary(); // Cleanly exit to summary screen
+              },
+              child: const Text(
+                "Done / Close",
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
             ElevatedButton(
               onPressed: () {
                 Navigator.pop(context);
-                _resumeScannerStream(); // 👈 Resets variables and turns camera back ON
+                _resumeScannerStream();
               },
               style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
               child: const Text(
@@ -172,7 +172,7 @@ class _StudentVerifyDetailsScreenState
     }
   }
 
-  void _showLoopPromptDialog() {
+  void _showSuccessPromptDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -190,20 +190,24 @@ class _StudentVerifyDetailsScreenState
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.pop(context);
-              _resumeScannerStream();
+              Navigator.pop(context); // Dismiss dialog
+              _exitToSummary(); // Cleanly exit to summary screen
             },
             child: const Text(
-              "Scan Another Student",
-              style: TextStyle(fontWeight: FontWeight.bold),
+              "Done / Close",
+              style: TextStyle(color: Colors.grey),
             ),
           ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              _navigateToSummaryReport();
+              _resumeScannerStream();
             },
-            child: const Text("Done / Close"),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            child: const Text(
+              "Scan Another Student",
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -214,15 +218,13 @@ class _StudentVerifyDetailsScreenState
     setState(() {
       _activeStudentId = null;
       _studentProfileData = null;
-      _errorMessage = null;
       _paperCodeController.clear();
-      _canScan =
-          true; // 👈 FIXED: Tell scanner it is safe to scan a new card instantly
+      _canScan = true;
     });
   }
 
-  void _navigateToSummaryReport() {
-    _scannerController.dispose();
+  void _exitToSummary() {
+    _scannerController.dispose(); // Release camera resources immediately
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -254,6 +256,23 @@ class _StudentVerifyDetailsScreenState
         title: const Text("Scan Entry Pass Cards"),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: _exitToSummary,
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: _exitToSummary,
+            icon: const Icon(Icons.check, color: Colors.white),
+            label: const Text(
+              "Finish",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -321,13 +340,11 @@ class _StudentVerifyDetailsScreenState
                                     ? Image.network(
                                         passportUrl,
                                         fit: BoxFit.cover,
-                                        errorBuilder:
-                                            (context, error, stackTrace) =>
-                                                const Icon(
-                                                  Icons.person,
-                                                  size: 60,
-                                                  color: Colors.grey,
-                                                ),
+                                        errorBuilder: (c, e, s) => const Icon(
+                                          Icons.person,
+                                          size: 60,
+                                          color: Colors.grey,
+                                        ),
                                       )
                                     : const Icon(
                                         Icons.person,
@@ -411,23 +428,6 @@ class _StudentVerifyDetailsScreenState
                             keyboardType: TextInputType.number,
                           ),
                           const SizedBox(height: 16),
-                          if (_errorMessage != null)
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              margin: const EdgeInsets.only(bottom: 12),
-                              decoration: BoxDecoration(
-                                color: Colors.red.shade50,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                _errorMessage!,
-                                style: const TextStyle(
-                                  color: Colors.red,
-                                  fontSize: 13,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
                           ElevatedButton(
                             onPressed: _isSubmitting
                                 ? null
