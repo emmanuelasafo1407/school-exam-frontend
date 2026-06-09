@@ -1,59 +1,43 @@
+// lib/presentation/screens/admin/admin_layout.dart
 import 'package:flutter/material.dart';
+import 'admin_dashboard_screen.dart';
+import '../../widgets/sidebar.dart';
 
-class AdminLayout extends StatelessWidget {
-  final Widget child;
-  const AdminLayout({super.key, required this.child});
+class AdminLayout extends StatefulWidget {
+  const AdminLayout({super.key});
+
+  @override
+  State<AdminLayout> createState() => _AdminLayoutState();
+}
+
+class _AdminLayoutState extends State<AdminLayout> {
+  // 1. Initialize with the Dashboard screen
+  Widget _activePage = const AdminDashboardScreen();
+
+  // 2. This function changes the content
+  void _changePage(Widget newPage) {
+    setState(() {
+      _activePage = newPage;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Row(
         children: [
-          // THE SIDEBAR
-          Container(
-            width: 250,
-            color: const Color(0xFF0A1929), // Dark blue like your friend's
-            child: Column(
-              children: [
-                const Padding(
-                  padding: EdgeInsets.all(20.0),
-                  child: Text(
-                    "InvigiloEMS",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                _buildNavItem(Icons.dashboard, "Dashboard"),
-                _buildNavItem(Icons.table_chart, "Timetable"),
-                _buildNavItem(Icons.people, "Class Members"),
-                _buildNavItem(Icons.check_circle, "Attendance"),
-                _buildNavItem(Icons.analytics, "Analytics"),
-                _buildNavItem(Icons.calendar_today, "Academic Year"),
-                _buildNavItem(Icons.settings, "Settings"),
-              ],
-            ),
-          ),
-          // MAIN CONTENT AREA
+          // Sidebar is fixed here, it never moves/reloads
+          Sidebar(onPageSelected: _changePage),
+
           Expanded(
             child: Container(
               color: Colors.grey.shade100,
               padding: const EdgeInsets.all(24),
-              child: child,
+              child: _activePage, // Only this part updates
             ),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildNavItem(IconData icon, String title) {
-    return ListTile(
-      leading: Icon(icon, color: Colors.white70),
-      title: Text(title, style: const TextStyle(color: Colors.white70)),
-      onTap: () {},
     );
   }
 }

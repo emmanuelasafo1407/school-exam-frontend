@@ -1,7 +1,7 @@
+// main.dart
 import 'package:flutter/material.dart';
 import 'presentation/screens/login_screen.dart';
-// 1. IMPORT YOUR NEW ADMIN SCREEN
-import 'presentation/screens/admin/admin_dashboard_screen.dart';
+import 'presentation/screens/admin/admin_layout.dart'; // Point to Layout
 
 void main() {
   runApp(const MyApp());
@@ -22,8 +22,8 @@ class MyApp extends StatelessWidget {
       home: const LoginScreen(),
       routes: {
         '/login': (context) => const LoginScreen(),
-        // 2. REGISTER THE ROUTE HERE
-        '/admin-dashboard': (context) => AdminDashboardScreen(),
+        '/admin-dashboard': (context) =>
+            const AdminLayout(), // Routes to Layout
       },
     );
   }

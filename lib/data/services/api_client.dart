@@ -1,14 +1,12 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:dio/dio.dart'; // This will work after running 'flutter pub add dio'
+import 'package:dio/dio.dart';
 
 class ApiClient {
   final String baseUrl = "http://172.20.10.3:8000/api";
-
-  // Initialize Dio here
   final Dio _dio = Dio(BaseOptions(baseUrl: 'http://172.20.10.3:8000/api'));
 
-  // ONLY ONE VERSION OF getAdminStats
+  // --- ADMIN DASHBOARD & TIMETABLE (Using Dio) ---
   Future<Map<String, dynamic>> getAdminStats() async {
     try {
       final response = await _dio.get('/admin/stats');
@@ -18,8 +16,43 @@ class ApiClient {
     }
   }
 
-  // ... keep your other methods below (registerStudent, loginUser, etc.
+  Future<Map<String, dynamic>> uploadStudentCsv(String filePath) async {
+    FormData formData = FormData.fromMap({
+      "csv_file": await MultipartFile.fromFile(filePath),
+    });
+    final response = await _dio.post('/admin/import-students', data: formData);
+    return response.data;
+  }
 
+  Future<List<dynamic>> fetchStudents() async {
+    final response = await _dio.get('/admin/users?role=student');
+    return response.data['data'];
+  }
+
+  Future<void> updateStudentStatus(int userId, bool isQualified) async {
+    await _dio.patch(
+      '/admin/users/$userId/status',
+      data: {'is_qualified': isQualified},
+    );
+  }
+
+  Future<List<dynamic>> fetchExamSessions() async {
+    final response = await _dio.get('/admin/sessions');
+    return response.data;
+  }
+
+  Future<void> createExamSession(Map<String, dynamic> data) async {
+    await _dio.post('/admin/sessions', data: data);
+  }
+
+  Future<void> toggleSessionStatus(int id, bool isActive) async {
+    await _dio.patch(
+      '/admin/sessions/$id/toggle',
+      data: {'is_active': isActive},
+    );
+  }
+
+  // --- AUTH & STUDENT OPERATIONS (Original Custom Logic) ---
   Future<Map<String, dynamic>> registerStudent(
     Map<String, dynamic> data,
   ) async {
@@ -44,7 +77,6 @@ class ApiClient {
     }
   }
 
-  // 👈 NEW: Secure Network Endpoint for Student & Invigilator Logins
   Future<Map<String, dynamic>> loginUser(String email, String password) async {
     try {
       final response = await http.post(
@@ -72,9 +104,7 @@ class ApiClient {
   ) async {
     try {
       final response = await http.post(
-        Uri.parse(
-          "$baseUrl/register/invigilator",
-        ), // We will map this route next
+        Uri.parse("$baseUrl/register/invigilator"),
         headers: {
           "Content-Type": "application/json",
           "Accept": "application/json",
@@ -130,11 +160,10 @@ class ApiClient {
         Uri.parse("$baseUrl/log-attendance"),
         headers: {
           "Content-Type": "application/json",
-          "Accept": "application/json", // 👈 ENFORCES JSON output on failure
+          "Accept": "application/json",
         },
         body: jsonEncode({
-          "student_id_number":
-              studentId, // 👈 FIXED: Matches Laravel validation rule key
+          "student_id_number": studentId,
           "course_code": courseCode,
           "course_name": courseName,
           "lecturer_name": lecturerName,
@@ -145,7 +174,6 @@ class ApiClient {
           "paper_code": paperCode,
         }),
       );
-
       return {
         "statusCode": response.statusCode,
         "body": jsonDecode(response.body),
@@ -178,6 +206,23 @@ class ApiClient {
       };
     }
   }
+  // --- INVIGILATOR VERIFICATION ---
+
+  Future<List<dynamic>> fetchPendingInvigilators() async {
+    final response = await _dio.get('/admin/invigilators/pending');
+    return response.data;
+  }
+
+  Future<void> verifyInvigilator(int id) async {
+    await _dio.patch('/admin/invigilators/$id/verify');
+  }
+  // Add these to ApiClient class in lib/data/services/api_client.dart
+
+  // --- ATTENDANCE ---
+
+  Future<void> logAttendance(Map<String, dynamic> data) async {
+    await _dio.post('/log-attendance', data: data);
+  }
 
   Future<Map<String, dynamic>> fetchDetailedLedger(String courseCode) async {
     try {
@@ -200,17 +245,20 @@ class ApiClient {
     }
   }
 
+  Future<List<dynamic>> fetchAllAttendanceLogs() async {
+    final response = await _dio.get('/attendance/logs');
+    return response.data;
+  }
+
   Future<Map<String, dynamic>> logoutUser(String token) async {
     try {
       final response = await http.post(
         Uri.parse("$baseUrl/logout"),
         headers: {
           "Content-Type": "application/json",
-          "Authorization":
-              "Bearer $token", // Passes secure bearer verification header string
+          "Authorization": "Bearer $token",
         },
       );
-
       return {
         "statusCode": response.statusCode,
         "body": jsonDecode(response.body),
@@ -231,21 +279,15 @@ class ApiClient {
         Uri.parse("$baseUrl/student-profile/$studentId"),
         headers: {
           "Content-Type": "application/json",
-          "Accept":
-              "application/json", // 👈 Tells Laravel to ALWAYS return JSON instead of HTML web pages
+          "Accept": "application/json",
         },
       );
-
-      // Gracefully handle server crashes or bad route targets without crashing the JSON parser
       if (response.statusCode != 200) {
         return {
           "statusCode": response.statusCode,
-          "body": {
-            "message": "Server returned error code: ${response.statusCode}",
-          },
+          "body": {"message": "Server error: ${response.statusCode}"},
         };
       }
-
       return {
         "statusCode": response.statusCode,
         "body": jsonDecode(response.body),
@@ -253,7 +295,7 @@ class ApiClient {
     } catch (e) {
       return {
         "statusCode": 500,
-        "body": {"message": "Exception occurred during fetch operation: $e"},
+        "body": {"message": "Exception: $e"},
       };
     }
   }
@@ -281,7 +323,7 @@ class ApiClient {
     } catch (e) {
       return {
         "statusCode": 500,
-        "body": {"message": "Failed to log script submission: $e"},
+        "body": {"message": "Failed to log script: $e"},
       };
     }
   }
